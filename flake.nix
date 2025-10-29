@@ -20,7 +20,7 @@
           inherit system;
         };
         name = "cava-waybar-module";
-        version = "0.2.0";
+        version = "0.2.1";
       in
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {

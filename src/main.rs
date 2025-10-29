@@ -1,3 +1,4 @@
+use std::env;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
@@ -6,6 +7,9 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
+
+const APP_NAME: &str = std::env!("CARGO_PKG_NAME");
+const APP_VERSION: &str = std::env!("CARGO_PKG_VERSION");
 
 fn playerctl_active(plyr_status: &Arc<AtomicBool>) {
     let playerctl = Command::new("playerctl").arg("status").output().unwrap();
@@ -82,14 +86,25 @@ fn init_cava_config(confin_path: &String) {
 }
 
 fn main() -> io::Result<()> {
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() > 1 {
+        if args[1] == "-v" || args[1] == "--version" {
+            println!("{} v{}", APP_NAME, APP_VERSION);
+            return Ok(());
+        }
+    }
+
     let config_path = String::from("/tmp/cava_waybar_config");
     let playerctl_status = Arc::new(AtomicBool::from(false));
 
     let playerctl_trd = {
         let playerctl_status = Arc::clone(&playerctl_status);
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(2));
-            playerctl_active(&playerctl_status);
+            loop {
+                playerctl_active(&playerctl_status);
+                std::thread::sleep(Duration::from_secs(2));
+            }
         })
     };
 
