@@ -1,16 +1,22 @@
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Duration;
 
-fn playerctl_active() -> bool {
+fn playerctl_active(plyr_status: &Arc<AtomicBool>) {
     let playerctl = Command::new("playerctl").arg("status").output().unwrap();
     if playerctl.status.success() {
-        return true;
+        plyr_status.store(true, Ordering::Relaxed);
+        return;
     }
-    return false;
+    plyr_status.store(false, Ordering::Relaxed);
 }
 
-fn format_bar(config: &String) -> io::Result<()> {
+fn format_bar(config: &String, plyr_status: &Arc<AtomicBool>) -> io::Result<()> {
     let bar: Vec<char> = vec!['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
     let mut cava = Command::new("cava")
@@ -19,11 +25,11 @@ fn format_bar(config: &String) -> io::Result<()> {
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let stdout = cava.stdout.take().expect("Faild to capture stdou");
+    let stdout = cava.stdout.take().expect("Faild to capture stdout");
     let reader = BufReader::new(stdout);
 
     for line in reader.lines() {
-        if playerctl_active() {
+        if plyr_status.load(Ordering::Relaxed) {
             let line = line?;
 
             let strenth: Vec<u8> = line
@@ -77,7 +83,26 @@ fn init_cava_config(confin_path: &String) {
 
 fn main() -> io::Result<()> {
     let config_path = String::from("/tmp/cava_waybar_config");
+    let playerctl_status = Arc::new(AtomicBool::from(false));
+
+    let playerctl_trd = {
+        let playerctl_status = Arc::clone(&playerctl_status);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(2));
+            playerctl_active(&playerctl_status);
+        })
+    };
+
     init_cava_config(&config_path);
-    format_bar(&config_path)?;
+    let cava_trd = {
+        let playerctl_status = Arc::clone(&playerctl_status);
+        std::thread::spawn(move || {
+            let _ = format_bar(&config_path, &playerctl_status);
+        })
+    };
+
+    let _ = playerctl_trd.join();
+    let _ = cava_trd.join();
+
     Ok(())
 }
